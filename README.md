@@ -1,0 +1,2 @@
+# slp-manager
+The SLP liquidity pool that can help every Axie manager to send SLP to scholar to their scholar.   With dynamic NFT which setup by Axie manger manager, their scholar can easily check how many SLP they be able to claim and use the NFT as a key to claim their SLP credit without 15 days waiting time period.  This solution will cut time and human error for everyone who run Axie scholarship and create more utility on SLP single pool as a pool that can generate income from claiming fee.
