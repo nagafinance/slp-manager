@@ -119,7 +119,9 @@ contract SlpManager is Ownable, ReentrancyGuard {
         
         playerInfo[_player] = scholarInfo[scholarInfo.length - 1];
         roninInfo[_roninAddress] = scholarInfo[scholarInfo.length - 1];
+        playerList[_player] = true;
         roninList[_roninAddress] = true;
+        
         
     }
     
@@ -155,7 +157,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
         string memory _roninAddress,
         uint256 _dailySlp
         
-    ) public {
+    ) public onlyOwner {
         
         require(lastUpdate[_roninAddress] < _date);
         
@@ -164,13 +166,13 @@ contract SlpManager is Ownable, ReentrancyGuard {
             if (
                 keccak256(
                     abi.encodePacked(
-                        roninInfo[_roninAddress].roninAddress
+                        scholarInfo[i].roninAddress
                     )
                 ) == keccak256(abi.encodePacked(_roninAddress))
             ) {
-                roninInfo[_roninAddress].claimable +=
+                scholarInfo[i].claimable +=
                     (_dailySlp * roninInfo[_roninAddress].percentShare) /
-                    ONE;%
+                    ONE;
             }
         }
         lastUpdate[_roninAddress] = _date;
