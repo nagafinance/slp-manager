@@ -742,7 +742,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
             ) {
                 roninInfo[_roninAddress].claimable +=
                     (_dailySlp * roninInfo[_roninAddress].percentShare) /
-                    ONE;%
+                    ONE;
             }
         }
         lastUpdate[_roninAddress] = _date;
