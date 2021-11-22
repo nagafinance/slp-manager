@@ -16,7 +16,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
     uint256 constant ONE = 1e18;
     
     struct ScholarInfo {
-        string roninAddress;
+        address roninAddress;
         address player;
         uint256 claimable;
         uint256 percentShare; // 1e18 = 100 %
@@ -24,43 +24,32 @@ contract SlpManager is Ownable, ReentrancyGuard {
     
     address public devaddr;
     address public guildMaster;
-    IERC20 public slp;
     uint256 public balance;
+    IERC20 public slp;
     
     //Info of each scholar
     ScholarInfo[] public scholarInfo;
     //list of player
     mapping (address => bool) public playerList;
-    //list of ronin addesss
-    mapping (string => bool) internal roninList;
+    //list of ronin addess.
+    mapping (address => bool) public roninList;
     // Info of each player that was assigned to scholar.
-    mapping (address => ScholarInfo) public playerInfo;
+    mapping (address => uint256) public playerInfo;
     // Info of each ronin wallet that was assigned to Scholar.
-    mapping (string => ScholarInfo) internal roninInfo;
+    mapping (address => uint256) internal roninInfo;
     // Info of recently dailySlp update.
-    mapping(string => uint256) lastUpdate;
-    
+    mapping(address => uint256) lastUpdate;
     // @notice init with a list of recipients
     constructor(address _token, address _guildMaster) {
         slp = IERC20(_token);
         guildMaster = _guildMaster;
         devaddr = msg.sender;
         balance = 0;
-        
-        //dead scholar for remove function.
-        scholarInfo.push(
-            ScholarInfo({
-                roninAddress: "0x0000000000000000000000000000000000000000",
-                player: 0x0000000000000000000000000000000000000000,
-                claimable: 0,
-                percentShare: 0
-            })
-        );
-        
     }
 
     event Deposit(address guildMaster, uint256 amount);
     event Withdraw(address guildMaster, uint256 amount);
+    event Claim(address player, uint256 amount);
     
     function scholarLength() external view returns (uint256) {
         return scholarInfo.length;
@@ -89,24 +78,28 @@ contract SlpManager is Ownable, ReentrancyGuard {
     function claim() public {
         
         require(playerList[msg.sender] == true);
-        ScholarInfo memory player = playerInfo[msg.sender];
-        
-        uint256 claim_amount = player.claimable;
-        require(claim_amount <= balance);
-        
-        balance -= claim_amount;
-        playerInfo[msg.sender].claimable = 0;
 
-        slp.safeTransfer(msg.sender, claim_amount);
+        uint256 id = playerInfo[msg.sender];
+        
+        require(scholarInfo[id].player == msg.sender);
+        require(scholarInfo[id].claimable <= balance);
+        
+        slp.safeTransfer(msg.sender, scholarInfo[id].claimable);
+        
+        balance -= scholarInfo[id].claimable;
+        scholarInfo[id].claimable = 0;
+
+        emit Claim(msg.sender, scholarInfo[id].claimable);
     }
     
     function addScholar(
-        string memory _roninAddress,
-        uint256 _percentShare,
-        address _player
+        address _roninAddress,
+        address _player,
+        uint256 _percentShare
     ) public {
+
         require(guildMaster == msg.sender, "only guild master can add scholar.");
-        require(roninList[_roninAddress] == false, "please remove old scholar before assign new address.");
+        require(roninList[_roninAddress] != true, "please remove old scholar before assign new address.");
         
         scholarInfo.push(
             ScholarInfo({
@@ -117,44 +110,68 @@ contract SlpManager is Ownable, ReentrancyGuard {
             })
         );
         
-        playerInfo[_player] = scholarInfo[scholarInfo.length - 1];
-        roninInfo[_roninAddress] = scholarInfo[scholarInfo.length - 1];
+        playerInfo[_player] = scholarInfo.length - 1;
+        roninInfo[_roninAddress] = scholarInfo.length - 1;
+
         playerList[_player] = true;
         roninList[_roninAddress] = true;
-        
         
     }
     
     function updatePercentShare(
-        string memory _roninAddress,
+        address _roninAddress,
         uint256 _percent
     ) public {
         require(guildMaster == msg.sender);
-        roninInfo[_roninAddress].percentShare = _percent;
+
+        uint256 id = roninInfo[_roninAddress];
+        scholarInfo[id].percentShare = _percent;
     }
     
-    function removeScholar(
-        string memory _roninAddress
+    function removeOldPlayer(
+        address _player
     ) public {
         
-        require(guildMaster == msg.sender, "only guild master can remove scholar.");
-        require(roninList[_roninAddress] == true, "you can't remove address that dosen't exist in system");
+        require(guildMaster == msg.sender, "only guild master can remove player.");
+        require(playerList[_player] == true, "you can't remove address that dosen't exist in system");
         
-        address player = roninInfo[_roninAddress].player;
+        uint256 id = playerInfo[_player];
+        scholarInfo[id].player = 0x000000000000000000000000000000000000dEaD;
+        scholarInfo[id].claimable = 0; // For old claimable balance of player shouldn't send to old player using contract.
+
+        playerList[_player] = false;
+        delete playerInfo[_player];
         
-        playerInfo[player] = scholarInfo[0];
-        roninInfo[_roninAddress] = scholarInfo[0];
-        roninList[_roninAddress] = false;
+    }
+
+    function changePlayer(
+        address _roninAddress,
+        address _newPlayer
+    ) public {
+        
+        require(guildMaster == msg.sender, "only guild master can change player.");
+        require(roninList[_roninAddress] == true, "you can't chabge address that dosen't exist in system");
+        
+        uint256 id = roninInfo[_roninAddress];
+        address oldPlayer = scholarInfo[id].player;
+
+        scholarInfo[id].claimable = 0; // For old claimable balance of player shouldn't send to new player using contract.
+        scholarInfo[id].player = _newPlayer;
+
+        playerList[oldPlayer] = false;
+        delete playerInfo[oldPlayer];
+
+        playerInfo[_newPlayer] = id;
         
     }
     
-    function transferGuildMaster(address newMaster) public onlyOwner {
-        guildMaster = newMaster;
+    function transferGuildMaster(address _newMaster) public onlyOwner {
+        guildMaster = _newMaster;
     }
     
     function updatePaymentBalance(
         uint256 _date,
-        string memory _roninAddress,
+        address _roninAddress,
         uint256 _dailySlp
         
     ) public onlyOwner {
@@ -163,15 +180,9 @@ contract SlpManager is Ownable, ReentrancyGuard {
         
         for (uint256 i = 0; i < scholarInfo.length; i++) {
 
-            if (
-                keccak256(
-                    abi.encodePacked(
-                        scholarInfo[i].roninAddress
-                    )
-                ) == keccak256(abi.encodePacked(_roninAddress))
-            ) {
+            if ( scholarInfo[i].roninAddress == _roninAddress) {
                 scholarInfo[i].claimable +=
-                    (_dailySlp * roninInfo[_roninAddress].percentShare) /
+                    (_dailySlp * scholarInfo[i].percentShare) /
                     ONE;
             }
         }
