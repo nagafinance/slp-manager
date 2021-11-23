@@ -22,6 +22,8 @@ contract SlpManager is Ownable, ReentrancyGuard {
         uint256 percentShare; // 1e18 = 100 %
     }
     
+    uint256 public Percentfee;
+    address public feeAddress;
     address public devaddr;
     address public guildMaster;
     uint256 public balance;
@@ -84,12 +86,16 @@ contract SlpManager is Ownable, ReentrancyGuard {
         require(scholarInfo[id].player == msg.sender);
         require(scholarInfo[id].claimable <= balance);
         
-        slp.safeTransfer(msg.sender, scholarInfo[id].claimable);
+        fee = scholarInfo[id].claimable * percentFee / ONE;
+        uint256 claimAmount = scholarInfo[id].claimable - fee;
+
+        slp.safeTransfer(msg.sender, claimAmount);
+        slp.safeTransfer(feeAddress, fee);
         
         balance -= scholarInfo[id].claimable;
         scholarInfo[id].claimable = 0;
 
-        emit Claim(msg.sender, scholarInfo[id].claimable);
+        emit Claim(msg.sender, claimAmount);
     }
     
     function addScholar(
@@ -126,6 +132,12 @@ contract SlpManager is Ownable, ReentrancyGuard {
 
         uint256 id = roninInfo[_roninAddress];
         scholarInfo[id].percentShare = _percent;
+    }
+
+    function updatePercentFee(uint256 _percent) public onlyOwner {
+
+        percentFee = _percent;
+
     }
     
     function removeOldPlayer(
