@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 // @notice just a push payment spliter. not the best practice. use it on trusted address only
 
-contract SlpManager is Ownable, ReentrancyGuard {
+contract SlpManager is Ownable, ReentrancyGuard, ERC721("Naga Scholarship", "NAGAS") {
     using SafeERC20 for IERC20;
     uint256 constant ONE = 1e18;
     
@@ -23,6 +23,8 @@ contract SlpManager is Ownable, ReentrancyGuard {
         uint256 claimable;
         uint256 percentShare; // 1e18 = 100 %
     }
+
+    address constant DEAD = 0x000000000000000000000000000000000000dEaD;
     
     uint256 public percentFee;
     address public feeAddress;
@@ -37,8 +39,10 @@ contract SlpManager is Ownable, ReentrancyGuard {
     mapping (address => bool) public playerList;
     //list of ronin addess.
     mapping (address => bool) public roninList;
-    // Info of each player that was assigned to scholar.
-    mapping (address => uint256) public playerInfo;
+
+    // Info of each player that was assigned to scholar. (Use token id instead)
+    mapping (address => uint256) public firstPlayerInfo;
+
     // Info of each ronin wallet that was assigned to Scholar.
     mapping (address => uint256) internal roninInfo;
     // Info of recently dailySlp update.
@@ -67,7 +71,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
         emit Deposit(msg.sender, _amount);
     }
     
-    // Withdraw LP tokens from SlpManager.
+    // Withdraw SLP tokens from SlpManager.
     function withdraw(uint256 _amount) public {
         require(msg.sender == guildMaster, "only guildMaster can withdraw SLP from this contract.");
         require(balance >= _amount, "withdraw: not good");
@@ -79,13 +83,8 @@ contract SlpManager is Ownable, ReentrancyGuard {
         emit Withdraw(msg.sender, _amount);
     }
     
-    function claim() public {
-        
-        require(playerList[msg.sender] == true);
-
-        uint256 id = playerInfo[msg.sender];
-        
-        require(scholarInfo[id].player == msg.sender);
+    function claim(uint256 id) public {
+        require(ownerOf(id) == msg.sender, "Not owner");
         require(scholarInfo[id].claimable <= balance);
         
         uint256 fee = scholarInfo[id].claimable * percentFee / ONE;
@@ -117,13 +116,16 @@ contract SlpManager is Ownable, ReentrancyGuard {
                 percentShare: _percentShare
             })
         );
+
+        uint256 id = scholarInfo.length - 1;
         
-        playerInfo[_player] = scholarInfo.length - 1;
-        roninInfo[_roninAddress] = scholarInfo.length - 1;
+        firstPlayerInfo[_player] = id;
+        roninInfo[_roninAddress] = id;
 
         playerList[_player] = true;
         roninList[_roninAddress] = true;
         
+        _mint(_player, id);
     }
     
     function updatePercentShare(
@@ -137,9 +139,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
     }
 
     function updatePercentFee(uint256 _percent) public onlyOwner {
-
         percentFee = _percent;
-
     }
     
     function removeOldPlayer(
@@ -148,13 +148,15 @@ contract SlpManager is Ownable, ReentrancyGuard {
         
         require(guildMaster == msg.sender, "only guild master can remove player.");
         require(playerList[_player] == true, "you can't remove address that dosen't exist in system");
-        
-        uint256 id = playerInfo[_player];
-        scholarInfo[id].player = 0x000000000000000000000000000000000000dEaD;
+
+        uint256 id = firstPlayerInfo[_player];
+        scholarInfo[id].player = DEAD;
         scholarInfo[id].claimable = 0; // For old claimable balance of player shouldn't send to old player using contract.
 
+        _transfer(ownerOf(id), DEAD, id);
+
         playerList[_player] = false;
-        delete playerInfo[_player];
+        delete firstPlayerInfo[_player];
         
     }
 
@@ -162,7 +164,6 @@ contract SlpManager is Ownable, ReentrancyGuard {
         address _roninAddress,
         address _newPlayer
     ) public {
-        
         require(guildMaster == msg.sender, "only guild master can change player.");
         require(roninList[_roninAddress] == true, "you can't change address that doesn't exist in system");
         
@@ -173,10 +174,11 @@ contract SlpManager is Ownable, ReentrancyGuard {
         scholarInfo[id].player = _newPlayer;
 
         playerList[oldPlayer] = false;
-        delete playerInfo[oldPlayer];
+        delete firstPlayerInfo[oldPlayer];
 
-        playerInfo[_newPlayer] = id;
+        firstPlayerInfo[_newPlayer] = id;
         
+        _transfer(ownerOf(id), _newPlayer, id);
     }
     
     function transferGuildMaster(address _newMaster) public onlyOwner {
@@ -187,19 +189,16 @@ contract SlpManager is Ownable, ReentrancyGuard {
         uint256 _date,
         address _roninAddress,
         uint256 _dailySlp
-        
     ) public onlyOwner {
-        
+        require(roninList[_roninAddress], "Wrong ronin");
         require(lastUpdate[_roninAddress] < _date);
-        
-        for (uint256 i = 0; i < scholarInfo.length; i++) {
 
-            if ( scholarInfo[i].roninAddress == _roninAddress) {
-                scholarInfo[i].claimable +=
-                    (_dailySlp * scholarInfo[i].percentShare) /
-                    ONE;
-            }
-        }
+        uint256 i = roninInfo[_roninAddress];
+
+        scholarInfo[i].claimable +=
+            (_dailySlp * scholarInfo[i].percentShare) /
+            ONE;
+
         lastUpdate[_roninAddress] = _date;
     }
     
