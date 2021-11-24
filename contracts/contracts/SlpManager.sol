@@ -20,12 +20,12 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     struct ScholarInfo {
         address roninAddress;
         address player;
+        address keeper;
         uint256 claimable;
         uint256 percentShare; // 1e18 = 100 %
     }
     
     uint256 public percentFee;
-    address public xc;
     address public devaddr;
     address public guildMaster;
     address public feeAddress;
@@ -45,13 +45,14 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     // Info of recently dailySlp update.
     mapping(address => uint256) lastUpdate;
     // @notice init with a list of recipients
-    constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
+    constructor(address _token, address _guildMaster, address _keeper, address _feeAddress, uint256 _percentFee) {
         slp = IERC20(_token);
         guildMaster = _guildMaster;
         devaddr = msg.sender;
         balance = 0;
         feeAddress = _feeAddress;
         percentFee = _percentFee;
+        keeper = _keeper;
     }
 
     event Deposit(address guildMaster, uint256 amount);
@@ -191,10 +192,11 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         address _roninAddress,
         uint256 _dailySlp
         
-    ) public onlyOwner {
+    ) public {
         
         require(lastUpdate[_roninAddress] < _date);
         require(roninList[_roninAddress] == true);
+        require(msg.sender == keepper);
 
         uint256 id = roninInfo[_roninAddress];
 
