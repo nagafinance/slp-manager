@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 // AUTHOR: yoyoismee.eth
 
@@ -22,10 +23,11 @@ contract SlpManager is Ownable, ReentrancyGuard {
         uint256 percentShare; // 1e18 = 100 %
     }
     
-    uint256 public Percentfee;
-    address public feeAddress;
+    uint256 public percentFee;
+    address public xc;
     address public devaddr;
     address public guildMaster;
+    address public feeAddress;
     uint256 public balance;
     IERC20 public slp;
     
@@ -42,11 +44,13 @@ contract SlpManager is Ownable, ReentrancyGuard {
     // Info of recently dailySlp update.
     mapping(address => uint256) lastUpdate;
     // @notice init with a list of recipients
-    constructor(address _token, address _guildMaster) {
+    constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
         slp = IERC20(_token);
         guildMaster = _guildMaster;
         devaddr = msg.sender;
         balance = 0;
+        feeAddress = _feeAddress;
+        percentFee = _percentFee;
     }
 
     event Deposit(address guildMaster, uint256 amount);
@@ -86,7 +90,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
         require(scholarInfo[id].player == msg.sender);
         require(scholarInfo[id].claimable <= balance);
         
-        fee = scholarInfo[id].claimable * percentFee / ONE;
+        uint256 fee = scholarInfo[id].claimable * percentFee / ONE;
         uint256 claimAmount = scholarInfo[id].claimable - fee;
 
         slp.safeTransfer(msg.sender, claimAmount);
