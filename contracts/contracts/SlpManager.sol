@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 
 // @notice just a push payment spliter. not the best practice. use it on trusted address only
@@ -22,7 +24,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
         uint256 percentShare; // 1e18 = 100 %
     }
     
-    uint256 public Percentfee;
+    uint256 public percentFee;
     address public feeAddress;
     address public devaddr;
     address public guildMaster;
@@ -86,7 +88,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
         require(scholarInfo[id].player == msg.sender);
         require(scholarInfo[id].claimable <= balance);
         
-        fee = scholarInfo[id].claimable * percentFee / ONE;
+        uint256 fee = scholarInfo[id].claimable * percentFee / ONE;
         uint256 claimAmount = scholarInfo[id].claimable - fee;
 
         slp.safeTransfer(msg.sender, claimAmount);
@@ -162,7 +164,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
     ) public {
         
         require(guildMaster == msg.sender, "only guild master can change player.");
-        require(roninList[_roninAddress] == true, "you can't chabge address that dosen't exist in system");
+        require(roninList[_roninAddress] == true, "you can't change address that doesn't exist in system");
         
         uint256 id = roninInfo[_roninAddress];
         address oldPlayer = scholarInfo[id].player;
