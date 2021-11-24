@@ -8,11 +8,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 
 
 // @notice just a push payment spliter. not the best practice. use it on trusted address only
 
-contract SlpManager is Ownable, ReentrancyGuard {
+contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     using SafeERC20 for IERC20;
     uint256 constant ONE = 1e18;
     
@@ -40,7 +41,7 @@ contract SlpManager is Ownable, ReentrancyGuard {
     // Info of each player that was assigned to scholar.
     mapping (address => uint256) public playerInfo;
     // Info of each ronin wallet that was assigned to Scholar.
-    mapping (address => uint256) internal roninInfo;
+    mapping (address => uint256) public roninInfo;
     // Info of recently dailySlp update.
     mapping(address => uint256) lastUpdate;
     // @notice init with a list of recipients
@@ -193,15 +194,11 @@ contract SlpManager is Ownable, ReentrancyGuard {
     ) public onlyOwner {
         
         require(lastUpdate[_roninAddress] < _date);
-        
-        for (uint256 i = 0; i < scholarInfo.length; i++) {
+        require(roninList[_roninAddress] == true);
 
-            if ( scholarInfo[i].roninAddress == _roninAddress) {
-                scholarInfo[i].claimable +=
-                    (_dailySlp * scholarInfo[i].percentShare) /
-                    ONE;
-            }
-        }
+        uint256 id = roninInfo[_roninAddress];
+
+        scholarInfo[id].claimable += (_dailySlp * scholarInfo[i].percentShare) / ONE;
         lastUpdate[_roninAddress] = _date;
     }
     
