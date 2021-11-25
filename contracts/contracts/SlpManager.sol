@@ -32,6 +32,8 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
      * Job ID: d5270d1c311941d0b08bead21fea7747
      * Fee: 0.1 LINK
      */
+
+    string public APIUrl;
     
     uint256 public percentFee;
     address public devaddr;
@@ -60,13 +62,28 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     // Info of recently dailySlp update.
     mapping(address => uint256) lastUpdate;
     // @notice init with a list of recipients
-    constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
-        slp = IERC20(_token);
-        guildMaster = _guildMaster;
+    // constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
+    //     slp = IERC20(_token);
+    //     guildMaster = _guildMaster;
+    //     devaddr = msg.sender;
+    //     balance = 0;
+    //     feeAddress = _feeAddress;
+    //     percentFee = _percentFee;
+
+    //     setPublicChainlinkToken();
+    //     oracle = 0xc57B33452b4F7BB189bB5AfaE9cc4aBa1f7a4FD8;
+    //     jobId = "d5270d1c311941d0b08bead21fea7747";
+    //     fee = 0.1 * 10 ** 18; // (Varies by network and job)
+
+    // }
+    //for testing
+    constructor() {
+        slp = IERC20(0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471);
+        guildMaster = 0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471;
         devaddr = msg.sender;
         balance = 0;
-        feeAddress = _feeAddress;
-        percentFee = _percentFee;
+        feeAddress = 0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471;
+        percentFee = 0;
 
         setPublicChainlinkToken();
         oracle = 0xc57B33452b4F7BB189bB5AfaE9cc4aBa1f7a4FD8;
@@ -112,11 +129,11 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         require(scholarInfo[id].player == msg.sender);
         require(scholarInfo[id].claimable <= balance);
         
-        uint256 fee = scholarInfo[id].claimable * percentFee / ONE;
+        uint256 protocolFee = scholarInfo[id].claimable * percentFee / ONE;
         uint256 claimAmount = scholarInfo[id].claimable - fee;
 
         slp.safeTransfer(msg.sender, claimAmount);
-        slp.safeTransfer(feeAddress, fee);
+        slp.safeTransfer(feeAddress, protocolFee);
         
         balance -= scholarInfo[id].claimable;
         scholarInfo[id].claimable = 0;
@@ -207,58 +224,47 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         guildMaster = _newMaster;
     }
     
-    function updatePaymentBalance(
-        uint256 _date,
-        address _roninAddress
+    function getSLPamount(
+
+        string memory _roninAddress
         
     ) public onlyOwner {
-        
-        require(lastUpdate[_roninAddress] < _date);
-        require(roninList[_roninAddress] == true);
+
+        address roninAddress = parseAddr(_roninAddress);
+        require(roninList[roninAddress] == true);
 
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
 
         // Set the URL to perform the GET request on
-        request.add("get", "https://game-api.axie.technology/slp/0x951abd24aca1a033065eb0b6b4e37b6a8a380251");
+        // request.add("get", "https://game-api.axie.technology/api/v1/0xaf589071ed4e0f4aa081d445b7644ac75cd722c4");
+        
+        APIUrl = string(abi.encodePacked("https://game-api.axie.technology/api/v1/", _roninAddress));
 
-//        0[	
-// success	true
-// client_id	"0xaf589071ed4e0f4aa081d445b7644ac75cd722c4"
-// item_id	1
-// total	1345
-// blockchain_related	
-// signature	
-// signature	"0x01970f31fc0a80e182d7d82c95451fda23d5e5995ea72b0f253648fe1b5c306f003749866878a41358dc46ab0aa2b64beb31d6964afdbe56ea3666d165fe0530de1c"
-// amount	10362
-// timestamp	1636963731
-// balance	0
-// checkpoint	10362
-// block_number	8488065
-// claimable_total	0
-// last_claimed_item_at	1636963731
-// item	
-// id	1
-// name	"Breeding Potion"
-// description	"Breeding Potion is required to breed two Axies"
-// image_url	""
-// updated_at	1576669291
-// created_at	1576669291
-// update_time	1637821585428
-
-        request.add("path", "0.claimable_total");
+        request.add("get", APIUrl);
+        request.add("path", "in_game_slp");
 
         // Multiply the result by 1000000000000000000 to remove decimals
         int timesAmount = 10**18;
         request.addInt("times", timesAmount);
 
-        uint256 id = roninInfo[_roninAddress];
-
         sendChainlinkRequestTo(oracle, request, fee);
 
-        uint256 amount = this.claimableTotal();
+    }
 
+    function updatePaymentBalance(
+        uint256 _date,
+        string memory _roninAddress
+    ) public onlyOwner {
+
+        getSLPamount(_roninAddress);
+
+        address roninAddress = parseAddr(_roninAddress);
+        require(lastUpdate[roninAddress] < _date);
+
+        uint256 amount = this.claimableTotal();
+        uint256 id = roninInfo[roninAddress];
         scholarInfo[id].claimable += (amount * scholarInfo[id].percentShare) / ONE;
-        lastUpdate[_roninAddress] = _date;
+        lastUpdate[roninAddress] = _date;
 
     }
 
@@ -266,5 +272,33 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     {
         claimableTotal = _claimableTotal;
     }
+
+    function parseAddr(string memory _a) internal pure returns (address _parsedAddress) {
+    bytes memory tmp = bytes(_a);
+    uint160 iaddr = 0;
+    uint160 b1;
+    uint160 b2;
+    for (uint i = 2; i < 2 + 2 * 20; i += 2) {
+        iaddr *= 256;
+        b1 = uint160(uint8(tmp[i]));
+        b2 = uint160(uint8(tmp[i + 1]));
+        if ((b1 >= 97) && (b1 <= 102)) {
+            b1 -= 87;
+        } else if ((b1 >= 65) && (b1 <= 70)) {
+            b1 -= 55;
+        } else if ((b1 >= 48) && (b1 <= 57)) {
+            b1 -= 48;
+        }
+        if ((b2 >= 97) && (b2 <= 102)) {
+            b2 -= 87;
+        } else if ((b2 >= 65) && (b2 <= 70)) {
+            b2 -= 55;
+        } else if ((b2 >= 48) && (b2 <= 57)) {
+            b2 -= 48;
+        }
+        iaddr += (b1 * 16 + b2);
+    }
+    return address(iaddr);
+}
     
 }
