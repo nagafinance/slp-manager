@@ -23,6 +23,8 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         address player;
         uint256 claimable;
         uint256 percentShare; // 1e18 = 100 %
+        uint256 lifetimeSLP;
+        uint256 deptSLP;
     }
 
     /**
@@ -155,7 +157,9 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
                 roninAddress: _roninAddress,
                 player: _player,
                 claimable: 0,
-                percentShare: _percentShare
+                percentShare: _percentShare,
+                lifetimeSLP: 0, //call API
+                deptSLP: 0
             })
         );
         
@@ -217,6 +221,7 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         delete playerInfo[oldPlayer];
 
         playerInfo[_newPlayer] = id;
+        playerList[_newPlayer] = true;
         
     }
     
@@ -241,7 +246,7 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         APIUrl = string(abi.encodePacked("https://game-api.axie.technology/api/v1/", _roninAddress));
 
         request.add("get", APIUrl);
-        request.add("path", "in_game_slp");
+        request.add("path", "lifetime_slp");
 
         // Multiply the result by 1000000000000000000 to remove decimals
         int timesAmount = 10**18;
@@ -254,7 +259,7 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     function updatePaymentBalance(
         uint256 _date,
         string memory _roninAddress
-    ) public onlyOwner {
+    ) internal {
 
         getSLPamount(_roninAddress);
 
@@ -274,31 +279,31 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     }
 
     function parseAddr(string memory _a) internal pure returns (address _parsedAddress) {
-    bytes memory tmp = bytes(_a);
-    uint160 iaddr = 0;
-    uint160 b1;
-    uint160 b2;
-    for (uint i = 2; i < 2 + 2 * 20; i += 2) {
-        iaddr *= 256;
-        b1 = uint160(uint8(tmp[i]));
-        b2 = uint160(uint8(tmp[i + 1]));
-        if ((b1 >= 97) && (b1 <= 102)) {
-            b1 -= 87;
-        } else if ((b1 >= 65) && (b1 <= 70)) {
-            b1 -= 55;
-        } else if ((b1 >= 48) && (b1 <= 57)) {
-            b1 -= 48;
+        bytes memory tmp = bytes(_a);
+        uint160 iaddr = 0;
+        uint160 b1;
+        uint160 b2;
+        for (uint i = 2; i < 2 + 2 * 20; i += 2) {
+            iaddr *= 256;
+            b1 = uint160(uint8(tmp[i]));
+            b2 = uint160(uint8(tmp[i + 1]));
+            if ((b1 >= 97) && (b1 <= 102)) {
+                b1 -= 87;
+            } else if ((b1 >= 65) && (b1 <= 70)) {
+                b1 -= 55;
+            } else if ((b1 >= 48) && (b1 <= 57)) {
+                b1 -= 48;
+            }
+            if ((b2 >= 97) && (b2 <= 102)) {
+                b2 -= 87;
+            } else if ((b2 >= 65) && (b2 <= 70)) {
+                b2 -= 55;
+            } else if ((b2 >= 48) && (b2 <= 57)) {
+                b2 -= 48;
+            }
+            iaddr += (b1 * 16 + b2);
         }
-        if ((b2 >= 97) && (b2 <= 102)) {
-            b2 -= 87;
-        } else if ((b2 >= 65) && (b2 <= 70)) {
-            b2 -= 55;
-        } else if ((b2 >= 48) && (b2 <= 57)) {
-            b2 -= 48;
-        }
-        iaddr += (b1 * 16 + b2);
+        return address(iaddr);
     }
-    return address(iaddr);
-}
     
 }
