@@ -217,6 +217,7 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         delete playerInfo[oldPlayer];
 
         playerInfo[_newPlayer] = id;
+        playerList[_newPlayer] = true;
         
     }
     
