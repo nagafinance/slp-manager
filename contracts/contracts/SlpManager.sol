@@ -10,6 +10,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 
+
+// @notice just a push payment spliter. not the best practice. use it on trusted address only
+
 contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, ChainlinkClient {
     using SafeERC20 for IERC20;
     using Chainlink for Chainlink.Request;
@@ -339,7 +342,7 @@ contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, Chai
         bytes memory data = abi.encodePacked(addr);
         bytes memory alphabet = "0123456789abcdef";
 
-        bytes memory str = new bytes(2 + data.length% * 2);
+        bytes memory str = new bytes(2 + data.length * 2);
         str[0] = "0";
         str[1] = "x";
         for (uint i = 0; i < data.length; i++) {
