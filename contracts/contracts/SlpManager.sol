@@ -342,7 +342,7 @@ contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, Chai
         bytes memory data = abi.encodePacked(addr);
         bytes memory alphabet = "0123456789abcdef";
 
-        bytes memory str = new bytes(2 + data.length * 2);
+        bytes memory str = new bytes(2 + data.length% * 2);
         str[0] = "0";
         str[1] = "x";
         for (uint i = 0; i < data.length; i++) {
