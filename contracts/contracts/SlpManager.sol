@@ -10,9 +10,6 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 
-
-// @notice just a push payment spliter. not the best practice. use it on trusted address only
-
 contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, ChainlinkClient {
     using SafeERC20 for IERC20;
     using Chainlink for Chainlink.Request;
