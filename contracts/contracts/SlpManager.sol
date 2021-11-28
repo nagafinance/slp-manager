@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 // AUTHOR: yoyoismee.eth
 
@@ -9,11 +8,12 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 
 
 // @notice just a push payment spliter. not the best practice. use it on trusted address only
 
-contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
+contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, ChainlinkClient {
     using SafeERC20 for IERC20;
     using Chainlink for Chainlink.Request;
     uint256 constant ONE = 1e18;
@@ -21,7 +21,6 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     struct ScholarInfo {
         address roninAddress;
         address player;
-        uint256 claimable;
         uint256 percentShare; // 1e18 = 100 %
         uint256 lifetimeSLP;
         uint256 deptSLP;
@@ -48,9 +47,10 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     address private oracle;
     bytes32 private jobId;
     uint256 private fee;
-    
-    uint256 public claimableTotal;
+    uint256 public lastUpkeep = 0;
 
+    //List of ronin addresses
+    address[] public roninAddresses;
     //Info of each scholar
     ScholarInfo[] public scholarInfo;
     //list of player
@@ -61,8 +61,13 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     mapping (address => uint256) public playerInfo;
     // Info of each ronin wallet that was assigned to Scholar.
     mapping (address => uint256) public roninInfo;
+    // Mapping of chainlink request to ronin address
+    mapping (bytes32 => address) public requestRonin;
     // Info of recently dailySlp update.
-    mapping(address => uint256) lastUpdate;
+    mapping(address => uint256) public lastUpdate;
+    // Mapping from ronin address to string
+    mapping(address => string) public roninAddressStr;
+
     // @notice init with a list of recipients
     // constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
     //     slp = IERC20(_token);
@@ -79,17 +84,18 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
 
     // }
     //for testing
-    constructor() {
-        slp = IERC20(0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471);
-        guildMaster = 0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471;
+    constructor(address _token, address _guildMaster, address _feeAddress, uint256 _percentFee) {
+        slp = IERC20(_token);
+        guildMaster = _guildMaster;
         devaddr = msg.sender;
         balance = 0;
-        feeAddress = 0x35A98eA6EE6Ff8c5735D254BF496ecf6D2a5C471;
-        percentFee = 0;
+        feeAddress = _feeAddress;
+        percentFee = _percentFee;
 
         setPublicChainlinkToken();
         oracle = 0xc57B33452b4F7BB189bB5AfaE9cc4aBa1f7a4FD8;
         jobId = "d5270d1c311941d0b08bead21fea7747";
+ 
         fee = 0.1 * 10 ** 18; // (Varies by network and job)
 
     }
@@ -127,18 +133,19 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         require(playerList[msg.sender] == true);
 
         uint256 id = playerInfo[msg.sender];
+        uint256 claimable = scholarInfo[id].lifetimeSLP - scholarInfo[id].deptSLP;
         
         require(scholarInfo[id].player == msg.sender);
-        require(scholarInfo[id].claimable <= balance);
+        require(claimable <= balance);
         
-        uint256 protocolFee = scholarInfo[id].claimable * percentFee / ONE;
-        uint256 claimAmount = scholarInfo[id].claimable - fee;
+        uint256 protocolFee = claimable * percentFee / ONE;
+        uint256 claimAmount = claimable - fee;
 
         slp.safeTransfer(msg.sender, claimAmount);
         slp.safeTransfer(feeAddress, protocolFee);
         
-        balance -= scholarInfo[id].claimable;
-        scholarInfo[id].claimable = 0;
+        balance -= claimable;
+        scholarInfo[id].deptSLP = scholarInfo[id].lifetimeSLP;
 
         emit Claim(msg.sender, claimAmount);
     }
@@ -156,7 +163,6 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
             ScholarInfo({
                 roninAddress: _roninAddress,
                 player: _player,
-                claimable: 0,
                 percentShare: _percentShare,
                 lifetimeSLP: 0, //call API
                 deptSLP: 0
@@ -166,8 +172,14 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         playerInfo[_player] = scholarInfo.length - 1;
         roninInfo[_roninAddress] = scholarInfo.length - 1;
 
+        if (!roninList[_roninAddress]) {
+            roninAddresses.push(_roninAddress);
+        }
+
         playerList[_player] = true;
         roninList[_roninAddress] = true;
+
+        roninAddressStr[_roninAddress] = address2String(_roninAddress);
         
     }
     
@@ -196,7 +208,8 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         
         uint256 id = playerInfo[_player];
         scholarInfo[id].player = 0x000000000000000000000000000000000000dEaD;
-        scholarInfo[id].claimable = 0; // For old claimable balance of player shouldn't send to old player using contract.
+        scholarInfo[id].deptSLP = scholarInfo[id].lifetimeSLP; // For old claimable balance of player shouldn't send to old player using contract.
+        
 
         playerList[_player] = false;
         delete playerInfo[_player];
@@ -209,12 +222,12 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     ) public {
         
         require(guildMaster == msg.sender, "only guild master can change player.");
-        require(roninList[_roninAddress] == true, "you can't chabge address that dosen't exist in system");
+        require(roninList[_roninAddress] == true, "you can't change address that doesn't exist in system");
         
         uint256 id = roninInfo[_roninAddress];
         address oldPlayer = scholarInfo[id].player;
 
-        scholarInfo[id].claimable = 0; // For old claimable balance of player shouldn't send to new player using contract.
+        scholarInfo[id].deptSLP = scholarInfo[id].lifetimeSLP; // For old claimable balance of player shouldn't send to new player using contract.
         scholarInfo[id].player = _newPlayer;
 
         playerList[oldPlayer] = false;
@@ -228,14 +241,14 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
     function transferGuildMaster(address _newMaster) public onlyOwner {
         guildMaster = _newMaster;
     }
+
+    function getApiUrl(address roninAddress) public view returns(string memory) {
+        return string(abi.encodePacked("https://game-api.axie.technology/api/v1/", roninAddressStr[roninAddress]));
+    }
     
-    function getSLPamount(
-
-        string memory _roninAddress
-        
+    function getSLPAmount(
+        address roninAddress
     ) public onlyOwner {
-
-        address roninAddress = parseAddr(_roninAddress);
         require(roninList[roninAddress] == true);
 
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), this.fulfill.selector);
@@ -243,9 +256,7 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
         // Set the URL to perform the GET request on
         // request.add("get", "https://game-api.axie.technology/api/v1/0xaf589071ed4e0f4aa081d445b7644ac75cd722c4");
         
-        APIUrl = string(abi.encodePacked("https://game-api.axie.technology/api/v1/", _roninAddress));
-
-        request.add("get", APIUrl);
+        request.add("get", getApiUrl(roninAddress));
         request.add("path", "lifetime_slp");
 
         // Multiply the result by 1000000000000000000 to remove decimals
@@ -254,28 +265,49 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
 
         sendChainlinkRequestTo(oracle, request, fee);
 
+        requestRonin[request.id] = roninAddress;
+    }
+
+    function _batchGetSLPAmount() internal {
+        for (uint256 i = 0; i < roninAddresses.length; i++) {
+            if (roninList[roninAddresses[i]]) {
+                getSLPAmount(roninAddresses[i]);
+            }
+        }
+    }
+
+    function batchGetSLPAmount() public onlyOwner {
+        _batchGetSLPAmount();
     }
 
     function updatePaymentBalance(
         uint256 _date,
-        string memory _roninAddress
+        uint256 amount,
+        address roninAddress
     ) internal {
-
-        getSLPamount(_roninAddress);
-
-        address roninAddress = parseAddr(_roninAddress);
         require(lastUpdate[roninAddress] < _date);
 
-        uint256 amount = this.claimableTotal();
         uint256 id = roninInfo[roninAddress];
-        scholarInfo[id].claimable += (amount * scholarInfo[id].percentShare) / ONE;
+        scholarInfo[id].lifetimeSLP += (amount * scholarInfo[id].percentShare) / ONE;
+        if (lastUpdate[roninAddress] == 0 || scholarInfo[id].player == 0x000000000000000000000000000000000000dEaD) {
+            scholarInfo[id].deptSLP = scholarInfo[id].lifetimeSLP;
+        }
         lastUpdate[roninAddress] = _date;
-
     }
 
-    function fulfill(bytes32 _requestId, uint256 _claimableTotal) public recordChainlinkFulfillment(_requestId)
+    function fulfill(bytes32 _requestId, uint256 _amount) public recordChainlinkFulfillment(_requestId)
     {
-        claimableTotal = _claimableTotal;
+        updatePaymentBalance(block.timestamp, _amount, requestRonin[_requestId]);
+    }
+
+    function checkUpkeep(bytes calldata /* checkData */) external override returns (bool upkeepNeeded, bytes memory /* performData */) {
+        upkeepNeeded = (block.timestamp - lastUpkeep) >= 1 days;
+    }
+
+    function performUpkeep(bytes calldata /* performData */) external override {
+        require((block.timestamp - lastUpkeep) >= 1 days, "Wait for 1 day");
+        _batchGetSLPAmount();
+        lastUpkeep = block.timestamp;
     }
 
     function parseAddr(string memory _a) internal pure returns (address _parsedAddress) {
@@ -304,6 +336,20 @@ contract SlpManager is Ownable, ReentrancyGuard, ChainlinkClient {
             iaddr += (b1 * 16 + b2);
         }
         return address(iaddr);
+    }
+
+    function address2String(address addr) public pure returns(string memory) {
+        bytes memory data = abi.encodePacked(addr);
+        bytes memory alphabet = "0123456789abcdef";
+
+        bytes memory str = new bytes(2 + data.length * 2);
+        str[0] = "0";
+        str[1] = "x";
+        for (uint i = 0; i < data.length; i++) {
+            str[2+i*2] = alphabet[uint(uint8(data[i] >> 4))];
+            str[3+i*2] = alphabet[uint(uint8(data[i] & 0x0f))];
+        }
+        return string(str);
     }
     
 }
