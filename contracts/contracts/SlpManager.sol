@@ -139,7 +139,7 @@ contract SlpManager is Ownable, KeeperCompatibleInterface, ReentrancyGuard, Chai
         require(claimable <= balance);
         
         uint256 protocolFee = claimable * percentFee / ONE;
-        uint256 claimAmount = claimable - fee;
+        uint256 claimAmount = claimable - protocolFee;
 
         slp.safeTransfer(msg.sender, claimAmount);
         slp.safeTransfer(feeAddress, protocolFee);
